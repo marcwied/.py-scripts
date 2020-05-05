@@ -41,7 +41,7 @@ def put_clients(data_file,member_id):
     return put_response
 
 # Test Function
-# print(put_clients(240178))
+# print(put_clients(clientID))
 
 
 """
@@ -171,6 +171,6 @@ elif loyalty_integration == 'y':
 #
 # connection string using mnkyfunctions (pypyodbc) - doesnt work, login timeout
 #
-# connection = monkeyFunctions.DBConnections(dbserver, dbuser, dbpass).azure_connect('dev223_monkeymedia_ca_01')
+# connection = monkeyFunctions.DBConnections(dbserver, dbuser, dbpass).azure_connect('DBnameGoesHere')
 
 ###########################################################################################################
