@@ -4,6 +4,8 @@ import json
 import pyodbc
 from itertools import groupby
 import itertools
+import pandas as pd
+import xlwt
 
 def azure_connect(dbserver: str, db: str, dbuser: str) -> object:
     """Connect to Azure database
@@ -42,7 +44,7 @@ def get_auth_token(key=None):
     """
     if key is None:
         key = {'client_id': api_key, 'client_secret': api_secret}
-    dest_token = requests.get('https://putyoururlhere.com/endpoint', params=key)
+    dest_token = requests.get('server url/endpoint', params=key)
     dest_access_token = dest_token.json()
     type(dest_access_token)
     return dest_access_token['access_token']
@@ -59,7 +61,7 @@ def get_og(og_id: str):
 
     """
     headers = {'content-type': 'application/json', 'Authorization': 'Bearer ' + str(get_auth_token())}
-    get_response = requests.get('https://putyoururlhere.com/endpoint' + str(og_id) + '?details=true',
+    get_response = requests.get('server url/endpoint/' + str(og_id) + '?details=true',
                                 headers=headers)
     return get_response.json()
 
@@ -92,7 +94,7 @@ def put_og(og_json):
 
     """
     headers = {'content-type': 'application/json', 'Authorization': 'Bearer ' + str(get_auth_token())}
-    get_response = requests.post('https://putyoururlhere.com/endpoint', data=og_json,
+    get_response = requests.post('server url/endpoint', data=og_json,
                                 headers=headers)
     print(get_response.status_code)
     # if item fails to update against an order guide, the item and order guide are added to a list for later processing
@@ -141,11 +143,37 @@ def build_payload(item_id, prod_items):
                             for selectionGroup in selectionGroups or []:
                                 subItems = selectionGroup['subItems']
                                 for prodItem in subItems:
-                                    prod_dict = {'menu': '', 'category': 'Production Item', 'group': '', 'menu_item_id': item['id'],
-                                                 'item_id': prodItem['id'], 'item': prodItem['name']}
+                                    if selectionGroups == 'None':
 
-                                    prod_dict.update({key: prodItem['price']})
-                                    prod_item_list.append(prod_dict)
+                                        prod_dict = {'menu': '', 'category': 'Production Item', 'group': '',
+                                                     'menu_item_id': item['id'],
+                                                     'production_item_id': prodItem['id'], 'item': prodItem['name']}
+
+                                        prod_dict.update({key: prodItem['price']})
+                                        prod_item_list.append(prod_dict)
+
+
+                                    else:
+                                        print(selectionGroup)
+                                        prod_dict = {'menu': '', 'category': 'Production Item', 'group': '',
+                                                     'menu_item_id': item['id'],
+                                                     'production_item_id': prodItem['id'], 'item': prodItem['name'],
+                                                     'max_quantity': selectionGroup['maxQuanity'],
+                                                     'input_type': selectionGroup['inputType']}
+
+                                        if selectionGroup['disallowFrontEnd'] == 0:
+                                            prod_dict.update({'available_frontEnd': 'yes'})
+                                        else:
+                                            prod_dict.update({'available_frontEnd': 'no'})
+
+                                        if selectionGroup['disallowBackEnd'] == 0:
+                                            prod_dict.update({'available_admin': 'yes'})
+                                        else:
+                                            prod_dict.update({'available_admin': 'no'})
+
+                                        prod_dict.update({key: prodItem['price']})
+                                        prod_item_list.append(prod_dict)
+
 
                     else:
                         continue
@@ -163,17 +191,43 @@ def build_payload(item_id, prod_items):
                             print(f'{item_id} has been processed against {key}')
 
                             # checks if user has opted to include production items, if yes, script iterates over all prod item data and adds to the production item list
+                            # includes data for prod items such as, basic item info and menu mapping configuration including FE/BE visibility, quantity limitations and input type
                             if prod_items == 'y':
 
                                 selectionGroups = child['selectionGroups']
                                 for selectionGroup in selectionGroups or []:
                                     subItems = selectionGroup['subItems']
                                     for prodItem in subItems:
-                                        prod_dict = {'menu': '', 'category': 'Production Item', 'group': '', 'menu_item_id': child['id'],
-                                                     'item_id': prodItem['id'], 'item': prodItem['name']}
+                                        if selectionGroups == 'None':
 
-                                        prod_dict.update({key: prodItem['price']})
-                                        prod_item_list.append(prod_dict)
+                                            prod_dict = {'menu': '', 'category': 'Production Item', 'group': '',
+                                                         'menu_item_id': child['id'],
+                                                         'production_item_id': prodItem['id'], 'item': prodItem['name']}
+
+                                            prod_dict.update({key: prodItem['price']})
+                                            prod_item_list.append(prod_dict)
+
+
+                                        else:
+                                            print(selectionGroup)
+                                            prod_dict = {'menu': '', 'category': 'Production Item', 'group': '',
+                                                         'menu_item_id': child['id'],
+                                                         'production_item_id': prodItem['id'], 'item': prodItem['name'],
+                                                         'max_quantity': selectionGroup['maxQuanity'],
+                                                         'input_type': selectionGroup['inputType']}
+
+                                            if selectionGroup['disallowFrontEnd'] == 0:
+                                                prod_dict.update({'available_frontEnd': 'yes'})
+                                            else:
+                                                prod_dict.update({'available_frontEnd': 'no'})
+
+                                            if selectionGroup['disallowBackEnd'] == 0:
+                                                prod_dict.update({'available_admin': 'yes'})
+                                            else:
+                                                prod_dict.update({'available_admin': 'no'})
+
+                                            prod_dict.update({key: prodItem['price']})
+                                            prod_item_list.append(prod_dict)
 
                         else:
                             continue
@@ -188,7 +242,7 @@ def build_payload(item_id, prod_items):
             payload['menu'] = y[0]
             payload['category'] = y[1]
             payload['group'] = y[2]
-            payload['item_id'] = item_id
+            payload['menu_item_id'] = item_id
             payload['item'] = y[4]
 
         default_price = cursor.execute(
@@ -212,7 +266,7 @@ def build_payload(item_id, prod_items):
                 final_prod_list.append(prod_item_list[i])
 
         # groupby requires the container to be sorted by the key
-        sortkey = lambda x: x['item_id']
+        sortkey = lambda x: x['production_item_id']
         final_prod_list.sort(key=sortkey)
 
         # "key" is the common key for the items
@@ -233,21 +287,14 @@ def build_payload(item_id, prod_items):
 
     print(f'Menu Item ID:{item_id} Processed')
 
-# def check_parent(item_id):
-#     cursor.execute(
-#         """select parent_id
-#             from dbo.product_sub_real
-#             where product_sub_id = ?""", item_id)
-#     for itemm in cursor:
-#         return itemm[0] != 0
 
 
 # ************************************************************
-server = "servername-goes-here.net"
+server = "server url"
 devnum = input(str('Enter Dev Number: '))
 
-database = 'dev' + str(devnum) + 'appended server name'
-user = input('Enter Username (not domain): ') + '@usernamedomain.com'
+database = 'dev' + str(devnum) + 'server url'
+user = input('Enter Azure Username (including domain): ')
 
 #initial DB connection object
 cnxn = azure_connect(server, database, user)
@@ -257,36 +304,35 @@ cursor = cnxn.cursor()
 # init list of order guides to process for GET or POST
 og_list = []
 # init .csv headers for GET
-og_headers = ['menu', 'category', 'group', 'menu_item_id', 'item_id', 'item', 'defaultPrice']
+og_headers = ['menu', 'category', 'group', 'menu_item_id', 'production_item_id', 'item', 'max_quantity', 'input_type', 'available_admin', 'available_frontEnd', 'defaultPrice']
 
 if devnum == '100':
-    api_key = 'specific key goes here'
+    api_key = 'enter api key here'
     type(api_key)
-    api_secret = 'specific secret goes here'
+    api_secret = 'enter api secret'
     type(api_secret)
 
 if devnum != '100':
-    api_key = input("Enter the Client API Key: ")
+    api_key = 'monkey' + str(devnum)
     type(api_key)
-    api_secret = input("Enter the Client API Secret: ")
+    secret_container = cursor.execute("select replace (client_secret, '{noop}', '') as [client_secret] from dbo.api_auth where api_key = ? ", api_key)
+    api_secret = ''
+    for element in secret_container:
+        api_secret = element[0]
     type(api_secret)
 
-    # api_key = 'monkey' + str(devnum)
-    # type(api_key)
-    # api_secret = cursor.execute("select replace (client_secret, '{noop}', '') as [client_secret] from dbo.api_auth where api_key = ? ", api_key)
-    # type(api_secret)
-
 # prompts user for desired API function (GET or POST)
-get_or_post = input('Get or Post? Press 1 for Get or 2 for Post ')
+get_or_post = input('Get or Post? \n'
+                    '1 - GET\n'
+                    '2 - POST\n')
 
 # GET ENGINE
 if get_or_post == '1':
 
-    # prompts user for the types of menu items they'd like to see (Catering, Takeout or Both)
+    # prompts user for the types of menu items they'd like to see (Catering or Takeout)
     menu_item_types = input("Please enter which of the following you'd like to process: \n"
                             "1 - Catering Menu Items\n"
-                            "2 - Takeout Menu Items\n"
-                            "3 - Both\n ")
+                            "2 - Takeout Menu Items\n")
     # init menu items list
     menu_items = []
 
@@ -299,11 +345,14 @@ if get_or_post == '1':
         # prompts user for the Order Guides they would like to process the Menu Items against.
         # Options are to specify stores codes (which adds their OGs to the list)
         # specify order guides by ID, or process all order guides assigned to an active store
-        raw_store_list = input(
-            "Enter stores codes separated by comma (no spaces), leave blank for all stores, or enter 'o' to enter a list of Order Guides: ")
+        og_selection = input(
+            "Which Order Guides do you want to process?\n"
+            "1 - All Active Stores/Order Guides\n"
+            "2 - List of Order Guide IDs\n"
+            "3 - List of Store Codes\n")
 
         # adds all current order guides for active stores to og_list
-        if raw_store_list == '':
+        if og_selection == '1':
             cursor.execute(
                 "SELECT DISTINCT og_base_id, ogt.og_template_name "
                 "FROM [dbo].[store_order_guides] sog  "
@@ -319,7 +368,7 @@ if get_or_post == '1':
                 og_headers.append(row[1])
 
         # adds order guides to og_list based on order guide ids provided by user
-        elif raw_store_list == 'o':
+        elif og_selection == '2':
             order_guide_list_entry = input("Enter Order Guide Base IDs separated by comma (no spaces): ")
             cursor.execute("SELECT DISTINCT ogb.og_base_id, ogt.og_template_name "
                            "FROM dbo.order_guide_base ogb "
@@ -331,7 +380,8 @@ if get_or_post == '1':
 
         # adds order guides to og_list based on store codes provided by user
         else:
-            stores = raw_store_list.split(',')
+            store_codes = input("Enter list of Store Codes separated by comma: ")
+            stores = store_codes.split(',')
             for store_code in stores:
                 cursor.execute("""SELECT DISTINCT og_base_id, ogt.og_template_name
                 FROM [dbo].[store_order_guides] sog
@@ -364,11 +414,14 @@ if get_or_post == '1':
         # prompts user for the Order Guides they would like to process the Menu Items against.
         # Options are to specify stores codes (which adds their OGs to the list)
         # specify order guides by ID, or process all order guides assigned to an active store
-        raw_store_list = input(
-            "Enter stores codes separated by comma (no spaces), leave blank for all stores, or enter 'o' to enter a list of Order Guides: ")
+        og_selection = input(
+            "Which Order Guides do you want to process?\n"
+            "1 - All Active Stores/Order Guides\n"
+            "2 - List of Order Guide IDs\n"
+            "3 - List of Store Codes\n")
 
         # adds all current order guides for active stores to og_list
-        if raw_store_list == '':
+        if og_selection == '1':
             cursor.execute(
                 "SELECT DISTINCT og_base_id, ogt.og_template_name "
                 "FROM [dbo].[store_order_guides] sog  "
@@ -384,7 +437,7 @@ if get_or_post == '1':
                 og_headers.append(row[1])
 
         # adds order guides to og_list based on order guide ids provided by user
-        elif raw_store_list == 'o':
+        elif og_selection == '2':
             order_guide_list_entry = input("Enter Order Guide Base IDs separated by comma (no spaces): ")
             cursor.execute("SELECT DISTINCT ogb.og_base_id, ogt.og_template_name "
                            "FROM dbo.order_guide_base ogb "
@@ -398,18 +451,17 @@ if get_or_post == '1':
 
         # adds order guides to og_list based on store codes provided by user
         else:
-            stores = raw_store_list.split(',')
+            store_codes = input("Enter list of Store Codes separated by comma: ")
+            stores = store_codes.split(',')
             for store_code in stores:
                 cursor.execute("""SELECT DISTINCT og_base_id, ogt.og_template_name
-                FROM [dbo].[store_order_guides] sog
-                JOIN dbo.store s ON sog.store_id = s.store_id
-                JOIN dbo.order_guide_base ogb ON sog.og_template_id = ogb.og_template_id
-                JOIN dbo.order_guide_template ogt ON sog.og_template_id = ogt.og_template_id WHERE s.store_id IN (
-                SELECT store_id FROM dbo.store WHERE store_code = ?)""", store_code)
+                            FROM [dbo].[store_order_guides] sog
+                            JOIN dbo.store s ON sog.store_id = s.store_id
+                            JOIN dbo.order_guide_base ogb ON sog.og_template_id = ogb.og_template_id
+                            JOIN dbo.order_guide_template ogt ON sog.og_template_id = ogt.og_template_id WHERE s.store_id IN (
+                            SELECT store_id FROM dbo.store WHERE store_code = ?)""", store_code)
                 for row in cursor:
                     og_list.append(row)
-
-                    # adds order guide name to .csv headers
                     og_headers.append(row[1])
 
         print(og_list)
@@ -427,88 +479,63 @@ if get_or_post == '1':
         for row in cursor:
             menu_items.append(row[0])
 
-    # ENGINE for BOTH
-    if menu_item_types == '3':
-
-        # prompts user for the Order Guides they would like to process the Menu Items against.
-        # Options are to specify stores codes (which adds their OGs to the list)
-        # specify order guides by ID, or process all order guides assigned to an active store
-        raw_store_list = input(
-            "Enter stores codes separated by comma (no spaces), leave blank for all stores, or enter 'o' to enter a list of Order Guides: ")
-
-        # adds all current order guides for active stores to og_list
-        if raw_store_list == '':
-            cursor.execute("SELECT DISTINCT og_base_id, ogt.og_template_name "
-                           "FROM [dbo].[store_order_guides] sog "
-                           "JOIN dbo.store s ON sog.store_id = s.store_id "
-                           "JOIN dbo.order_guide_base ogb ON sog.og_template_id = ogb.og_template_id "
-                           "JOIN dbo.order_guide_template ogt ON sog.og_template_id = ogt.og_template_id "
-                           "where sog.store_id IN (SELECT store_id from dbo.store where store_status = 1 AND ogb.[status] = 1) "
-                           "AND sog.product_class_id IN (16, 24)")
-            for row in cursor:
-                og_list.append(row)
-
-                # adds order guide name to .csv headers
-                og_headers.append(row[1])
-
-        # adds order guides to og_list based on order guide ids provided by user
-        elif raw_store_list == 'o':
-            order_guide_list_entry = input("Enter Order Guide Base IDs separated by comma (no spaces): ")
-            cursor.execute("SELECT DISTINCT ogb.og_base_id, ogt.og_template_name "
-                           "FROM dbo.order_guide_base ogb "
-                           "JOIN dbo.order_guide_template ogt ON ogb.og_template_id = ogt.og_template_id "
-                           "where ogb.og_base_id IN" + '(' + str(order_guide_list_entry) + ')')
-            for row in cursor:
-                og_list.append(row)
-
-                # adds order guide name to .csv headers
-                og_headers.append(row[1])
-
-        # adds order guides to og_list based on store codes provided by user
-        else:
-            stores = raw_store_list.split(',')
-            for store_code in stores:
-                cursor.execute("""SELECT DISTINCT og_base_id, ogt.og_template_name
-                FROM [dbo].[store_order_guides] sog
-                JOIN dbo.store s ON sog.store_id = s.store_id
-                JOIN dbo.order_guide_base ogb ON sog.og_template_id = ogb.og_template_id
-                JOIN dbo.order_guide_template ogt ON sog.og_template_id = ogt.og_template_id WHERE s.store_id IN (
-                SELECT store_id FROM dbo.store WHERE store_code = ?)""", store_code)
-                for row in cursor:
-                    og_list.append(row)
-
-                    # adds order guide name to .csv headers
-                    og_headers.append(row[1])
-
-        print(og_list)
-
-        # queries DB for ALL menu items that are currently active and NOT parent items, adds item_id to menu_items list
-        cursor.execute(
-            "select product_sub_id, product_sub_name "
-            "from dbo.product_sub_real psr "
-            "JOIN dbo.product_real pr ON psr.product_id = pr.product_id "
-            "JOIN dbo.product_group_real pgr ON pr.product_group_id = pgr.product_group_id "
-            "JOIN dbo.product_class_real pcr ON pgr.product_class_id = pcr.product_class_id "
-            "where product_sub_status = 1 AND pcr.product_class_id IN (16, 24) "
-            "AND pr.product_status = 1 AND pgr.product_group_status = 1 AND psr.is_parent = 0 order by product_sub_id")
-
-        for row in cursor:
-            menu_items.append(row[0])
-
     # prompts user for file name the script should write to
     filename = input('What is the file name to write to? ')
     with open(filename, 'w') as f:
 
+		# writer object
         w = csv.DictWriter(f, fieldnames=og_headers)
         w.writeheader()
-        print(og_headers)
+        
+        # list of order guides in header to iterate over
+        updateOGs = og_headers[11:]
+        
+        #dict containing row 2 headers data - this row lists the order guide ID directly under the order guide name
+        ogiddict = {'menu': '', 'category': '', 'group': '', 'menu_item_id': '',
+                                     'production_item_id': '', 'item': '', 'max_quantity': '',
+                                     'input_type': '', 'available_admin': '', 'available_frontEnd': '',
+                                     'defaultPrice': 'OG Base ID:'}
+		
+		#dict containing row 3 headers data - this row lists call stores currently assigned to the order guide
+        ogid_store_dict = {'menu': '', 'category': '', 'group': '', 'menu_item_id': '',
+                    'production_item_id': '', 'item': '', 'max_quantity': '',
+                    'input_type': '', 'available_admin': '', 'available_frontEnd': '',
+                    'defaultPrice': 'Assigned Stores'}
+        temp_store_list = []
 
-        # once .csv is opened, og_prices is initialized with a list of dictionaries of order guides and their data
+        for ogname in updateOGs:
+            for ogitem in og_list:
+                if ogname == ogitem[1]:
+                    ogiddict.update({ogname: ogitem[0]})
+
+                else:
+                    continue
+
+			# queries db for store codes assigned to the current ogname
+            cursor.execute(
+                '''SELECT DISTINCT store_code
+                    from dbo.store s
+                    JOIN dbo.store_order_guides sog ON s.store_id = sog.store_id
+                    JOIN dbo.order_guide_template ogt ON sog.og_template_id = ogt.og_template_id
+                    where ogt.og_template_name = ?''', ogname)
+            for rowx in cursor:
+                temp_store_list.append(rowx[0])
+            ogid_store_dict.update({ogname: temp_store_list})
+
+
+
+        print(og_headers)
+        w.writerow(ogiddict)
+        w.writerow(ogid_store_dict)
+
+    # once .csv is opened, og_prices is initialized with a list of dictionaries of order guides and their data
         og_prices = build_og_dict()
 
         # menu_items list is iterated over and build_payload is called for every menu item in the list
         for item in menu_items:
             build_payload(item, prod_items)
+        file_reader = pd.read_csv(filename)
+        file_reader.to_excel(filename + '.xls')
 
 # POST ENGINE
 if get_or_post == '2':
@@ -524,7 +551,7 @@ if get_or_post == '2':
         reader = csv.DictReader(csvfile, delimiter=',')
 
         # init list of order guides based on .csv headers
-        updateOGs = reader.fieldnames[7:]
+        updateOGs = reader.fieldnames[11:]
 
         for row in reader:
 
@@ -561,10 +588,20 @@ if get_or_post == '2':
                     item_info_list = list(itertools.chain(*item_info))
 
                     # item_info is processed and its contents are passed to a final list
-                    for ogid in og_list_list:
+                    if row[og_item] != '':
+                        for ogid in og_list_list:
 
-                        # final list is iterated over and the data inside is used to build the json required for POST
-                        post_payload.update({'id': ogid, 'menus': [{'id': item_info_list[0], 'categories': [{'id': item_info_list[1], 'groups': [{'id': item_info_list[2], 'items': {'item': [{'id': row['menu_item_id'], 'price': '', 'selectionGroups':[{'subItems':[{'id': row['item_id'], 'price': row[og_item]}]}]}]}}]}]}]})
+                            # final list is iterated over and the data inside is used to build the json required for POST
+                            post_payload.update({'id': ogid, 'menus': [{'id': item_info_list[0], 'categories': [{'id': item_info_list[1], 'groups': [{'id': item_info_list[2], 'items': {'item': [{'id': row['menu_item_id'], 'price': '', 'selectionGroups':[{'subItems':[{'id': row['production_item_id'], 'price': row[og_item]}]}]}]}}]}]}]})
+
+                    elif row[og_item] == '':
+                        for ogid in og_list_list:
+
+                            # final list is iterated over and the data inside is used to build the json required for POST
+                            post_payload.update({'id': ogid, 'menus': [{'id': item_info_list[0], 'categories': [
+                                {'id': item_info_list[1], 'groups': [{'id': item_info_list[2], 'items': {'item': [
+                                    {'id': row['menu_item_id'], 'price': '', 'selectionGroups': [{'subItems': [
+                                        {'id': row['production_item_id'], 'price': 0}]}]}]}}]}]}]})
 
                 # ENGINE for Menu Items
                 else:
@@ -577,7 +614,7 @@ if get_or_post == '2':
                                                                     JOIN dbo.product_real pr ON psr.product_id = pr.product_id
                                                                     JOIN dbo.product_group_real pgr ON pr.product_group_id = pgr.product_group_id
                                                                     JOIN dbo.product_class_real pcr ON pgr.product_class_id = pcr.product_class_id
-                                                                    where product_sub_id = ?""", row['item_id'])
+                                                                    where product_sub_id = ?""", row['menu_item_id'])
                     for row3 in cursor:
                         item_info.append(row3)
                     item_info_list = list(itertools.chain(*item_info))
@@ -587,14 +624,14 @@ if get_or_post == '2':
                         if row[og_item] == '':
                             post_payload.update({'id': ogid, 'menus': [{'id': item_info_list[0], 'categories': [
                                 {'id': item_info_list[1], 'groups': [{'id': item_info_list[2], 'items': {'item': [
-                                    {'id': row['item_id'], 'price': row[og_item],
+                                    {'id': row['menu_item_id'], 'price': row[og_item],
                                      'availability': []}]}}]}]}]})
 
                         # item is updated with price given in .csv
                         else:
                             post_payload.update({'id': ogid, 'menus': [{'id': item_info_list[0], 'categories': [
                                 {'id': item_info_list[1], 'groups': [{'id': item_info_list[2], 'items': {'item': [
-                                    {'id': row['item_id'], 'price': row[og_item],
+                                    {'id': row['menu_item_id'], 'price': row[og_item],
                                      'availability': ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday',
                                                       'saturday']}]}}]}]}]})
 
@@ -631,3 +668,5 @@ if get_or_post == '2':
 
                     # writes menu item name, the order guide, and the price that failed to update
                     w.writerow([itemname, ogname, price])
+
+
